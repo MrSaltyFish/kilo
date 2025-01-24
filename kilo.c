@@ -15,6 +15,7 @@
 
 /*** defines ***/
 #define CTRL_KEY(k) ((k) & 0x1f)
+#define KILO_VERSION "0.0.1"
 
 /*** data ***/
 
@@ -154,19 +155,44 @@ struct abuf {
 };
 #define ABUF_INIT {NULL, 0}
 
-/*** output ***/
+void abAppend(struct abuf *ab, const char *s, int len) {
+  char *new = realloc(ab->b, ab->len + len);
 
+  if (new == NULL) {
+    return;
+  }
+
+  memcpy(&new[ab->len], s, len);
+  ab->b = new;
+  ab->len += len;
+}
+
+void abFree(struct abuf *ab) { free(ab->b); }
+
+/*** output ***/
 /*
  * Responsible for drawing Vim-style Tildes at the side
  */
-void editorDrawRows() {
-  int y = 0;
-
+void editorDrawRows(struct abuf *ab) {
+  int y;
   for (y = 0; y < E.screenRows; y++) {
-    write(STDOUT_FILENO, "~", 1);
 
+    if (y == E.screenRows / 3) {
+      char welcome[80];
+      int welcomeLen = snprintf(welcome, sizeof(welcome),
+                                "Kilo editor -- version %s", KILO_VERSION);
+
+      if (welcomeLen > E.screenCols) {
+        welcomeLen = E.screenCols;
+      }
+      abAppend(ab, welcome, welcomeLen);
+    } else {
+      abAppend(ab, "~", 1);
+    }
+
+    abAppend(ab, "\x1b[K", 3); // K - Erase in Line - similar to J
     if (y < E.screenRows - 1) {
-      write(STDOUT_FILENO, "\r\n", 2);
+      abAppend(ab, "\r\n", 2);
     }
   }
 }
@@ -176,10 +202,22 @@ void editorDrawRows() {
  * Vim-style tildes
  */
 void editorRefreshScreen() {
-  write(STDOUT_FILENO, "\x1b[2J", 4);
-  write(STDOUT_FILENO, "\x1b[H", 3);
-  editorDrawRows();
-  write(STDOUT_FILENO, "\x1b[H", 3);
+  struct abuf ab = ABUF_INIT;
+
+  abAppend(&ab, "\x1b[?25l", 6); // l - Set Mode (Hides the cursor)
+
+  // xJ - Clears the screen [replaced by
+  // clearing each line as we go]
+  // abAppend(&ab, "\x1b[2J", 4);
+
+  abAppend(&ab, "\x1b[H", 3); // xx;yyH -> Sets co-ordinates
+
+  editorDrawRows(&ab);
+
+  abAppend(&ab, "\x1b[H", 3);    // xx;yyH -> Sets co-ordinates
+  abAppend(&ab, "\x1b[?25h", 6); // h - Reset Mode (shows the cursor)
+  write(STDOUT_FILENO, ab.b, ab.len);
+  abFree(&ab);
 }
 
 /*** init ***/
