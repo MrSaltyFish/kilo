@@ -20,9 +20,11 @@
 /*** data ***/
 
 struct editorConfig {
-  struct termios orig_termios;
   int screenRows;
   int screenCols;
+  int cX;
+  int cY;
+  struct termios orig_termios;
 };
 struct editorConfig E;
 
@@ -130,6 +132,24 @@ int getWindowSize(int *rows, int *cols) {
   }
 }
 
+/** Input **/
+
+void editorMoveCursor(char key) {
+  switch (key) {
+  case 'a':
+    E.cX--;
+    break;
+  case 'd':
+    E.cX++;
+    break;
+  case 'w':
+    E.cY--;
+    break;
+  case 's':
+    E.cY++;
+    break;
+  }
+}
 /*
  * Processes keys read by editorReadKey()
  */
@@ -140,6 +160,13 @@ void editorProcessKeypress() {
     printf("Ctrl+q pressed, exiting\r\n");
 
     exit(0);
+    break;
+
+  case 'w':
+  case 's':
+  case 'a':
+  case 'd':
+    editorMoveCursor(c);
     break;
 
   default: {
@@ -185,6 +212,14 @@ void editorDrawRows(struct abuf *ab) {
       if (welcomeLen > E.screenCols) {
         welcomeLen = E.screenCols;
       }
+
+      int padding = (E.screenCols - welcomeLen) / 2;
+      if (padding) {
+        abAppend(ab, "~", 1);
+        padding--;
+      }
+      while (padding--)
+        abAppend(ab, " ", 1);
       abAppend(ab, welcome, welcomeLen);
     } else {
       abAppend(ab, "~", 1);
@@ -214,7 +249,10 @@ void editorRefreshScreen() {
 
   editorDrawRows(&ab);
 
-  abAppend(&ab, "\x1b[H", 3);    // xx;yyH -> Sets co-ordinates
+  char buf[32];
+  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cY + 1, E.cX + 1);
+  abAppend(&ab, buf, strlen(buf));
+
   abAppend(&ab, "\x1b[?25h", 6); // h - Reset Mode (shows the cursor)
   write(STDOUT_FILENO, ab.b, ab.len);
   abFree(&ab);
@@ -222,6 +260,8 @@ void editorRefreshScreen() {
 
 /*** init ***/
 void initEditor() {
+  E.cX = 0;
+  E.cY = 0;
   if (getWindowSize(&E.screenRows, &E.screenCols) == -1)
     die("getWindowSize");
 }
